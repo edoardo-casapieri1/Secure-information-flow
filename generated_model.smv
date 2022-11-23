@@ -1,0 +1,268 @@
+MODULE global
+
+	DEFINE
+
+		n_inst := 6;
+		inst_upper_bound := n_inst - 1;
+
+
+
+MODULE instructions
+
+	/--      inst: bytecode instruction to execute.                                                               --/
+
+	/--      arg: argument of the instruction (if needed). It can assume a value between 0 and (n_inst - 1).      --/
+	/--      For goto, if: the argument is the address of the instruction to jump to.                             --/
+	/--      For load, store: the argument is the index of the memory array (between 0 and 2).                    --/
+	/--      For pop, push, halt: the argument is ignored; it is not necessary to provide one.                    --/
+
+	VAR
+		global:                        global;
+		FROZENVAR inst:                array 0..global.inst_upper_bound of {pop, push, goto, load, store, if, halt};
+		FROZENVAR arg:                 array 0..global.inst_upper_bound of 0..global.inst_upper_bound;
+		FROZENVAR ipd:                 array 0..global.inst_upper_bound of 0..global.inst_upper_bound;
+
+	ASSIGN
+
+		/-- Instruction initialization start --/
+
+		init(inst[0]) := push;
+		init(arg[0]) := 0;
+		init(ipd[0]) := 0;
+		init(inst[1]) := load;
+		init(arg[1]) := 0;
+		init(ipd[1]) := 0;
+		init(inst[2]) := push;
+		init(arg[2]) := 0;
+		init(ipd[2]) := 0;
+		init(inst[3]) := store;
+		init(arg[3]) := 1;
+		init(ipd[3]) := 0;
+		init(inst[4]) := store;
+		init(arg[4]) := 2;
+		init(ipd[4]) := 0;
+		init(inst[5]) := halt;
+		init(arg[5]) := 0;
+		init(ipd[5]) := 0;
+		
+		/-- Instruction initialization end --/
+
+
+
+MODULE op_stack
+
+	VAR
+		val:                           array 0..4 of {hi, lo, null};
+		top:                           -1..4;
+
+	ASSIGN
+		init(top) := -1;
+		init(val[0]) := null;
+		init(val[1]) := null;
+		init(val[2]) := null;
+		init(val[3]) := null;
+		init(val[4]) := null;
+
+
+
+MODULE ipd_stack
+
+	VAR
+		global:                        global;
+		val:                           array 0..1 of {hi, lo, null};
+		addr:                          array 0..1 of 0..global.inst_upper_bound;
+		top:                           -1..1;
+
+	ASSIGN
+		init(top) := -1;
+		init(val[0]) := null;
+		init(val[1]) := null;
+		init(addr[0]) := 0;
+		init(addr[1]) := 0;
+
+
+
+MODULE state(inst, arg, ipd)
+
+	VAR
+		global:                        global;
+		pc:                            0..global.inst_upper_bound;
+		memory:                        array 0..2 of {hi, lo, null};
+		ipd_s:                         ipd_stack;
+		op_s:                          op_stack;
+		env:                           {hi, lo};
+		halted:                        boolean;
+
+	ASSIGN
+		init(pc) := 0;
+		init(env) := lo;
+		init(halted) := FALSE;
+
+		/-- Memory initialization start --/
+
+		init(memory[0]) := hi;
+		init(memory[1]) := lo;
+		init(memory[2]) := hi;
+		
+		/-- Memory initialization end --/
+
+
+		/-- Halted flag transitions --/
+		next(halted) := case
+			(inst = halt) : TRUE;
+			TRUE : halted;
+			esac;
+
+		/-- Program counter transitions --/
+		next(pc) := case
+			(pc = global.inst_upper_bound) | (inst = halt) | halted | (pc = ipd_s.addr[(ipd_s.top)] & (ipd_s.top >= 0) &
+				(ipd_s.top <= 1)) : pc;
+			(inst = if) : {arg, pc + 1};
+			(inst = goto) : arg;
+			(inst != halt) & (inst != goto) : pc + 1;
+			esac;
+
+		/-- Operand stack transitions --/
+		next(op_s.top) := case
+			halted | (pc = ipd_s.addr[(ipd_s.top)] & (ipd_s.top >= 0) & (ipd_s.top <= 1)) : op_s.top;
+			((inst = pop) | (inst = store) | (inst = if)) & (op_s.top >= 0) : op_s.top - 1;
+			((inst = push) | (inst = load)) & (op_s.top < 4) : op_s.top + 1;
+			TRUE : op_s.top;
+			esac;
+		next(op_s.val[0]) := case
+			halted | (pc = ipd_s.addr[(ipd_s.top)] & (ipd_s.top >= 0) & (ipd_s.top <= 1)) : op_s.val[0];
+			(inst = push) : case
+				(next(op_s.top) = 0) : env;
+				TRUE : op_s.val[0];
+				esac;
+			(inst = load) : case
+				(arg <= 2) & (next(op_s.top) = 0) : memory[arg];
+				TRUE : op_s.val[0];
+				esac;
+			((inst = pop) | (inst = store) | (inst = if)) & (op_s.top = 0) : null;
+			TRUE : op_s.val[0];
+			esac;
+		next(op_s.val[1]) := case
+			halted | (pc = ipd_s.addr[(ipd_s.top)] & (ipd_s.top >= 0) & (ipd_s.top <= 1)) : op_s.val[1];
+			(inst = push) : case
+				(next(op_s.top) = 1) : env;
+				TRUE : op_s.val[1];
+				esac;
+			(inst = load) : case
+				(arg <= 2) & (next(op_s.top) = 1) : memory[arg];
+				TRUE : op_s.val[1];
+				esac;
+			((inst = pop) | (inst = store) | (inst = if)) & (op_s.top = 1) : null;
+			TRUE : op_s.val[1];
+			esac;
+		next(op_s.val[2]) := case
+			halted | (pc = ipd_s.addr[(ipd_s.top)] & (ipd_s.top >= 0) & (ipd_s.top <= 1)) : op_s.val[2];
+			(inst = push) : case
+				(next(op_s.top) = 2) : env;
+				TRUE : op_s.val[2];
+				esac;
+			(inst = load) : case
+				(arg <= 2) & (next(op_s.top) = 2) : memory[arg];
+				TRUE : op_s.val[2];
+				esac;
+			((inst = pop) | (inst = store) | (inst = if)) & (op_s.top = 2) : null;
+			TRUE : op_s.val[2];
+			esac;
+		next(op_s.val[3]) := case
+			halted | (pc = ipd_s.addr[(ipd_s.top)] & (ipd_s.top >= 0) & (ipd_s.top <= 1)) : op_s.val[3];
+			(inst = push) : case
+				(next(op_s.top) = 3) : env;
+				TRUE : op_s.val[3];
+				esac;
+			(inst = load) : case
+				(arg <= 2) & (next(op_s.top) = 3) : memory[arg];
+				TRUE : op_s.val[3];
+				esac;
+			((inst = pop) | (inst = store) | (inst = if)) & (op_s.top = 3) : null;
+			TRUE : op_s.val[3];
+			esac;
+		next(op_s.val[4]) := case
+			halted | (pc = ipd_s.addr[(ipd_s.top)] & (ipd_s.top >= 0) & (ipd_s.top <= 1)) : op_s.val[4];
+			(inst = push) : case
+				(next(op_s.top) = 4) : env;
+				TRUE : op_s.val[4];
+				esac;
+			(inst = load) : case
+				(arg <= 2) & (next(op_s.top) = 4) : memory[arg];
+				TRUE : op_s.val[4];
+				esac;
+			((inst = pop) | (inst = store) | (inst = if)) & (op_s.top = 4) : null;
+			TRUE : op_s.val[4];
+			esac;
+
+		/-- Memory transitions --/
+		next(memory[0]) := case
+			halted | (pc = ipd_s.addr[(ipd_s.top)] & (ipd_s.top >= 0) & (ipd_s.top <= 1)) : memory[0];
+			(inst = store) & (op_s.top >= 0) & (arg = 0) : op_s.val[op_s.top];
+			TRUE : memory[0];
+			esac;
+		next(memory[1]) := case
+			halted | (pc = ipd_s.addr[(ipd_s.top)] & (ipd_s.top >= 0) & (ipd_s.top <= 1)) : memory[1];
+			(inst = store) & (op_s.top >= 0) & (arg = 1) : op_s.val[op_s.top];
+			TRUE : memory[1];
+			esac;
+		next(memory[2]) := case
+			halted | (pc = ipd_s.addr[(ipd_s.top)] & (ipd_s.top >= 0) & (ipd_s.top <= 1)) : memory[2];
+			(inst = store) & (op_s.top >= 0) & (arg = 2) : op_s.val[op_s.top];
+			TRUE : memory[2];
+			esac;
+
+		/-- IPD stack transitions --/
+		next(ipd_s.top) := case
+			halted : ipd_s.top;
+			(inst = if) & (ipd_s.top < 1) : ipd_s.top + 1;
+			(ipd_s.addr[ipd_s.top] = pc) & (ipd_s.top >= 0) : ipd_s.top - 1;
+			TRUE : ipd_s.top;
+			esac;
+		next(ipd_s.val[0]) := case
+			halted : ipd_s.val[0];
+			(inst = if) & (next(ipd_s.top) = 0) : env;
+			(ipd_s.top = 0) & (ipd_s.addr[ipd_s.top] = pc) : null;
+			TRUE : ipd_s.val[0];
+			esac;
+		next(ipd_s.addr[0]) := case
+			halted : ipd_s.addr[0];
+			(inst = if) & (next(ipd_s.top) = 0) : ipd;
+			(ipd_s.top = 0) & (ipd_s.addr[ipd_s.top] = pc) : 0;
+			TRUE : ipd_s.addr[0];
+			esac;
+		next(ipd_s.val[1]) := case
+			halted : ipd_s.val[1];
+			(inst = if) & (next(ipd_s.top) = 1) : env;
+			(ipd_s.top = 1) & (ipd_s.addr[ipd_s.top] = pc) : null;
+			TRUE : ipd_s.val[1];
+			esac;
+		next(ipd_s.addr[1]) := case
+			halted : ipd_s.addr[1];
+			(inst = if) & (next(ipd_s.top) = 1) : ipd;
+			(ipd_s.top = 1) & (ipd_s.addr[ipd_s.top] = pc) : 0;
+			TRUE : ipd_s.addr[1];
+			esac;
+
+		/-- Environment transitions --/
+		next(env) := case
+			halted : env;
+			(inst = if) & (op_s.top >= 0) : case
+				(env = hi) | (op_s.val[op_s.top] = hi) : hi;
+				TRUE : lo;
+				esac;
+			((pc) = (ipd_s.addr[(ipd_s.top)])) & (ipd_s.top >= 0) &
+				(ipd_s.top <= 1) & ((ipd_s.val[ipd_s.top]) != null) : (ipd_s.val[ipd_s.top]);
+			TRUE : env;
+			esac;
+
+
+MODULE main
+
+	VAR
+		global:                        global;
+		instructions:                  instructions;
+		state:                         state(instructions.inst[state.pc], instructions.arg[state.pc], instructions.ipd[state.pc]);
+		
+	SPEC
+		AG (state.memory[1] = lo)

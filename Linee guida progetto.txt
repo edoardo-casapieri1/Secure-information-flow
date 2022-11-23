@@ -1,0 +1,30 @@
+Istruzioni
+
+goto
+if
+push
+pop
+load
+store
+halt
+
+Programma da analizzare: sequenza di istruzioni (max 10)
+
+Regole next() da definire
+
+Regola ipd fondamentale
+
+Semantica astratta -> non ci sono i dati -> bisogna implementare sempre entrambe le condizioni true/false
+
+Model checker deve costruire il transition system: serve struttura dati che dice quali sono le variabili (max 3) e loro valore (H/L) -> Mem = array[3]
+
+Stack degli operandi al più 5 valori, così come lo stack ipd
+
+Struttura dati istruzioni: n istruzione, istruzione
+
+Stato -> memoria, stack, stack ipd, pc, valore ambiente d'esecuzione (env)
+
+In base all'istruzione successiva, lo stato viene calcolato in base alle regole definite dalla semantica.
+
+Provare a usare bytecode viewer per vedere com'è fatto un bytecode reale (le variabili non hanno un nome simbolico, ma gli viene assegnato un intero)
+
